@@ -13,7 +13,6 @@ public class AYANEO2S : AYANEO2
     //   0x76 = fan tachometer
     private const byte FanControlRegister = 0x4A;
     private const byte FanDutyRegister = 0x4B;
-    private const byte FanTachoRegister = 0x76;
     private const byte FanControlSoftware = 0x01;
     private const byte FanControlHardware = 0x00;
 
