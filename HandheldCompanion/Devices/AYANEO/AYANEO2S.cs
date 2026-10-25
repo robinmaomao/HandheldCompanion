@@ -36,6 +36,10 @@ public class AYANEO2S : AYANEO2
         if (!UseOpenLib || !IsOpen)
             return;
 
+        // the EC ignores the duty value while it is in hardware (firmware) mode
+        if (!hasAppliedSoftwareFanProfile)
+            return;
+
         percent = Math.Clamp(percent, 0.0d, 100.0d);
         double duty = percent * (ECDetails.FanValueMax - ECDetails.FanValueMin) / 100.0d + ECDetails.FanValueMin;
         byte value = Convert.ToByte(Math.Clamp(duty, 0.0d, 255.0d));
