@@ -1,6 +1,7 @@
 ﻿using HandheldCompanion.Commands.Functions.HC;
 using HandheldCompanion.Inputs;
 using HandheldCompanion.Managers;
+using HandheldCompanion.Shared;
 using System;
 using System.Threading;
 using System.Windows.Media;
@@ -94,14 +95,17 @@ namespace HandheldCompanion.Devices.AYANEO
 
             // manage events
             PowerManager.RemainingChargePercentChanged += PowerManager_RemainingChargePercentChanged;
+
+            // the EC is only reachable once the device is open
+            ApplyBatteryChargeLimit();
         }
 
         protected override void QuerySettings()
         {
-            // raise events
-            SettingsManager_SettingValueChanged("BatteryChargeLimit", ManagerFactory.settingsManager.GetString("BatteryChargeLimit"), false, true);
-
             base.QuerySettings();
+
+            // apply the stored charge limit once the settings are known
+            ApplyBatteryChargeLimit();
         }
 
         public override void Close()
@@ -122,45 +126,45 @@ namespace HandheldCompanion.Devices.AYANEO
             switch (name)
             {
                 case "BatteryChargeLimit":
-                    {
-                        bool enabled = Convert.ToBoolean(value);
-                        switch (enabled)
-                        {
-                            case true:
-                                CEcControl_BypassChargeOpen();
-                                break;
-                            case false:
-                                CEcControl_BypassChargeClose();
-                                break;
-                        }
-                    }
+                case "BatteryChargeLimitPercent":
+                    // the master switch alone must not bypass the battery:
+                    // only the configured threshold decides whether charging is inhibited
+                    ApplyBatteryChargeLimit();
                     break;
             }
 
             base.SettingsManager_SettingValueChanged(name, value, temporary, initializing);
         }
 
-        private void PowerManager_RemainingChargePercentChanged(object? sender, object e)
+        /// <summary>
+        /// Enables the charge bypass only when the battery is at or above the configured
+        /// threshold, and restores normal charging otherwise.
+        /// </summary>
+        protected void ApplyBatteryChargeLimit()
         {
-            // Check if BatteryChargeLimit is enabled in SettingsManager
-            bool isBatteryChargeLimitEnabled = ManagerFactory.settingsManager.GetBoolean("BatteryChargeLimit");
-            if (!isBatteryChargeLimitEnabled)
+            if (!UseOpenLib || !IsOpen)
                 return;
 
-            int BatteryChargeLimit = ManagerFactory.settingsManager.GetInt("BatteryChargeLimitPercent");
+            bool enabled = ManagerFactory.settingsManager.GetBoolean("BatteryChargeLimit");
+            int limit = ManagerFactory.settingsManager.GetInt("BatteryChargeLimitPercent");
 
-            // Get the current battery percentage
-            int batteryPercentage = PowerManager.RemainingChargePercent;
-            if (batteryPercentage >= BatteryChargeLimit)
+            // a limit of 100% (or less than 1%) means "no limit"
+            if (!enabled || limit <= 0 || limit >= 100)
             {
-                // Call the function to open the charge bypass
-                CEcControl_BypassChargeOpen();
-            }
-            else if (batteryPercentage < BatteryChargeLimit)
-            {
-                // Call the function to close the charge bypass
                 CEcControl_BypassChargeClose();
+                return;
             }
+
+            int batteryPercentage = PowerManager.RemainingChargePercent;
+            if (batteryPercentage >= limit)
+                CEcControl_BypassChargeOpen();
+            else
+                CEcControl_BypassChargeClose();
+        }
+
+        private void PowerManager_RemainingChargePercentChanged(object? sender, object e)
+        {
+            ApplyBatteryChargeLimit();
         }
 
         public override bool SetLedStatus(bool status)
@@ -314,14 +318,24 @@ namespace HandheldCompanion.Devices.AYANEO
 
         protected virtual void CEcControl_BypassChargeOpen()
         {
-            if (this.EcReadByte(0x1e) != 0x55)
-                this.EcWriteByte(0x1e, 0x55);
+            byte value = 0x55;
+            if (this.EcReadByte(0x1e) != value)
+                this.EcWriteByte(0x1e, value);
+
+            byte readBack = this.EcReadByte(0x1e);
+            if (readBack != value)
+                LogManager.LogWarning("Could not enable the battery charge bypass (wrote 0x{0:X2}, read 0x{1:X2})", value, readBack);
         }
 
         protected virtual void CEcControl_BypassChargeClose()
         {
-            if (this.EcReadByte(0x1e) != 0xaa)
-                this.EcWriteByte(0x1e, 0xaa);
+            byte value = 0xaa;
+            if (this.EcReadByte(0x1e) != value)
+                this.EcWriteByte(0x1e, value);
+
+            byte readBack = this.EcReadByte(0x1e);
+            if (readBack != value)
+                LogManager.LogWarning("Could not disable the battery charge bypass (wrote 0x{0:X2}, read 0x{1:X2})", value, readBack);
         }
     }
 }

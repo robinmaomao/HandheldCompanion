@@ -398,7 +398,8 @@ public static class PerformanceManager
                 if (previousAutoTDPEnabled)
                     StopAutoTDPWatchdog(true);
 
-                RequestTDP(profile.TDPOverrideValues);
+                // apply right away, the watchdog only re-applies what the firmware resets
+                RequestTDP(profile.TDPOverrideValues, true);
 
                 if (!tdpWatchdog.Enabled)
                     StartTDPWatchdog();
